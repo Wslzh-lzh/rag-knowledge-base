@@ -1,0 +1,46 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.next/
+node_modules/
+dist/
+build/
+.env
+.DS_Store
+
+# 本地数据
+work/
+data/
+storage/
+*.db
+*.sqlite
+*.sqlite3
+
+# 测试输出
+**/test_*.py
+**/test_*.txt
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+
+# 构建信息
+tsconfig.tsbuildinfo
+
+# Trae 系统文件
+.agents/
+skills-lock.json
+.superpowers/
+
