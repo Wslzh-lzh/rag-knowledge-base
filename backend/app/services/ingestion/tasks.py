@@ -77,16 +77,16 @@ async def process_document_task(document_id: str, kb_id: str, file_name: str) ->
                     kb_id=doc.kb_id,
                     chunk_no=chunk["chunk_no"],
                     content=chunk["content"],
-                    page_start=None,
-                    page_end=None,
+                    page_start=chunk.get("page_start"),
+                    page_end=chunk.get("page_end"),
                     token_count=len(chunk["content"].split()),
                     metadata_={"source": "ingestion", "char_count": chunk.get("char_count", 0)},
                 )
                 chunk_list.append({
                     "chunk_id": db_chunk.id,
                     "content": chunk["content"],
-                    "page_start": None,
-                    "page_end": None,
+                    "page_start": chunk.get("page_start"),
+                    "page_end": chunk.get("page_end"),
                     "metadata_": db_chunk.metadata_,
                 })
 
@@ -94,6 +94,15 @@ async def process_document_task(document_id: str, kb_id: str, file_name: str) ->
                 await get_task_queue().update_progress(
                     "", progress, f"分块完成 {idx + 1}/{len(parsed.chunks)}"
                 ) if False else None
+
+            from sqlalchemy.orm.attributes import flag_modified
+            doc_meta = dict(doc.metadata_ or {})
+            doc_meta["chunks"] = len(chunk_list)
+            doc_meta.update(parsed.metadata)
+            doc.metadata_ = doc_meta
+            flag_modified(doc, "metadata_")
+            await db.commit()
+            await db.refresh(doc)
 
             if chunk_list:
                 await vector_store.ensure_collection(settings.qdrant_collection, settings.embedding_dim)
@@ -150,6 +159,7 @@ async def process_document_task(document_id: str, kb_id: str, file_name: str) ->
                             pass
 
             parse_status = "completed" if parsed.text or parsed.chunks else "empty"
+
             await service.update_document_status(db, document=doc, parse_status=parse_status)
 
             logger.info(f"Document processed: {document_id} ({len(chunk_list)} chunks)")

@@ -139,7 +139,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(`Request failed: ${res.status} ${text}`);
   }
 
-  return res.json();
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
+  const text = await res.text();
+  if (!text) {
+    return undefined as unknown as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export const api = {
@@ -226,6 +234,30 @@ export const api = {
       metadata: Record<string, any>;
     }>(`/documents/${docId}/preview`, {
       method: "GET",
+    }),
+
+  reprocessDocument: (docId: string) =>
+    request<{ document_id: string; status: string }>(`/documents/${docId}/reprocess`, {
+      method: "POST",
+    }),
+
+  deleteDocument: (docId: string) =>
+    request<void>(`/documents/${docId}`, {
+      method: "DELETE",
+    }),
+
+  renameDocument: (docId: string, fileName: string) =>
+    request<Document>(`/documents/${docId}/rename`, {
+      method: "PATCH",
+      body: JSON.stringify({ file_name: fileName }),
+      headers: { "Content-Type": "application/json" },
+    }),
+
+  updateDocumentContent: (docId: string, content: string) =>
+    request<{ document_id: string; status: string }>(`/documents/${docId}/content`, {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+      headers: { "Content-Type": "application/json" },
     }),
 
   // Search
@@ -333,4 +365,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
+
+  sendMessageStream: async function* (
+    convId: string,
+    content: string,
+  ): AsyncGenerator<{ type: string; [key: string]: any }> {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/conversations/${convId}/messages/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ content }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Request failed: ${res.status} ${text}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) return;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+            yield parsed;
+          } catch (e) {
+            // skip parse errors
+          }
+        }
+      }
+    }
+  },
 };

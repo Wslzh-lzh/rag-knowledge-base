@@ -74,6 +74,47 @@ class DocumentService:
         await db.refresh(document)
         return document
 
+    async def update_document_metadata(
+        self,
+        db: AsyncSession,
+        document_id: str,
+        metadata: dict,
+    ) -> Document | None:
+        from sqlalchemy.orm.attributes import flag_modified
+        doc = await db.get(Document, document_id)
+        if not doc:
+            return None
+        existing = dict(doc.metadata_ or {})
+        existing.update(metadata)
+        doc.metadata_ = existing
+        flag_modified(doc, "metadata_")
+        await db.commit()
+        await db.refresh(doc)
+        return doc
+
     async def clear_chunks(self, db: AsyncSession, document_id: str) -> None:
         await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         await db.commit()
+
+    async def delete_document(self, db: AsyncSession, document_id: str) -> bool:
+        doc = await db.get(Document, document_id)
+        if not doc:
+            return False
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+        await db.delete(doc)
+        await db.commit()
+        return True
+
+    async def rename_document(
+        self,
+        db: AsyncSession,
+        document_id: str,
+        new_file_name: str,
+    ) -> Document | None:
+        doc = await db.get(Document, document_id)
+        if not doc:
+            return None
+        doc.file_name = new_file_name
+        await db.commit()
+        await db.refresh(doc)
+        return doc

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     rate_limit_per_hour: int = Field(default=1000, validation_alias="RATE_LIMIT_PER_HOUR")
 
     max_upload_size_mb: int = Field(default=50, validation_alias="MAX_UPLOAD_SIZE_MB")
+    async_process_threshold_mb: int = Field(default=10, validation_alias="ASYNC_PROCESS_THRESHOLD_MB")
+    pdf_parser_backend: str = Field(default="auto", validation_alias="PDF_PARSER_BACKEND")
+    pdf_enable_toc: bool = Field(default=True, validation_alias="PDF_ENABLE_TOC")
+    pdf_enable_table_extract: bool = Field(default=False, validation_alias="PDF_ENABLE_TABLE_EXTRACT")
 
     database_url: str = Field(
         default="postgresql+asyncpg://rag:rag@localhost:5432/rag_kb",
@@ -41,6 +45,7 @@ class Settings(BaseSettings):
 
     vector_store_backend: str = Field(default="memory", validation_alias="VECTOR_STORE_BACKEND")
     qdrant_collection: str = Field(default="rag_chunks", validation_alias="QDRANT_COLLECTION")
+    qdrant_path: str = Field(default="", validation_alias="QDRANT_PATH")
     fulltext_search_backend: str = Field(default="postgresql", validation_alias="FULLTEXT_SEARCH_BACKEND")
     opensearch_index: str = Field(default="rag_chunks", validation_alias="OPENSEARCH_INDEX")
     opensearch_use_ik_analyzer: bool = Field(default=True, validation_alias="OPENSEARCH_USE_IK_ANALYZER")

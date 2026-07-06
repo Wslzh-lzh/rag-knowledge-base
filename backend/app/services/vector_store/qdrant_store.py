@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -10,9 +12,11 @@ from app.services.vector_store.base import VectorSearchHit
 
 
 class QdrantVectorStore:
-    """Qdrant 向量数据库存储（生产环境调优版）。
+    """Qdrant 向量数据库存储（支持本地持久化和服务端模式）。
 
-    生产环境特性：
+    特性：
+    - 本地模式：无需服务器，数据持久化到本地文件
+    - 服务端模式：连接远程 Qdrant 服务
     - 连接复用与懒加载
     - 指数退避重试（3次）
     - 健康检查
@@ -23,10 +27,12 @@ class QdrantVectorStore:
     def __init__(
         self,
         url: str | None = None,
+        path: str | None = None,
         api_key: str | None = None,
         collection_name: str | None = None,
     ):
         self._url = url or settings.qdrant_url
+        self._path = path or (settings.qdrant_path if settings.qdrant_path else None)
         self._api_key = api_key or ""
         self._default_collection = collection_name or settings.qdrant_collection
         self._client = None
@@ -36,11 +42,19 @@ class QdrantVectorStore:
         if self._client is None:
             from qdrant_client import QdrantClient
 
-            self._client = QdrantClient(
-                url=self._url,
-                api_key=self._api_key or None,
-                timeout=10,
-            )
+            if self._path:
+                os.makedirs(self._path, exist_ok=True)
+                self._client = QdrantClient(path=self._path)
+            elif self._url and (self._url.startswith("http://") or self._url.startswith("https://")):
+                self._client = QdrantClient(
+                    url=self._url,
+                    api_key=self._api_key or None,
+                    timeout=10,
+                )
+            else:
+                default_path = str(Path(settings.local_storage_dir) / "qdrant")
+                os.makedirs(default_path, exist_ok=True)
+                self._client = QdrantClient(path=default_path)
         return self._client
 
     async def health_check(self) -> dict[str, Any]:
@@ -200,14 +214,13 @@ class QdrantVectorStore:
                 ]
             )
 
-        results = client.search(
+        results = client.query_points(
             collection_name=collection_name,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
-            search_params={"hnsw_ef": 128},
-        )
+        ).points
 
         hits: list[VectorSearchHit] = []
         for point in results:
@@ -228,14 +241,12 @@ class QdrantVectorStore:
         return hits
 
     async def delete_by_chunk_id(self, collection_name: str, chunk_id: str) -> None:
-        from qdrant_client.models import PointIdsList
-
         try:
             client = self._get_client()
             point_id = self._chunk_id_to_uuid(chunk_id)
             client.delete(
                 collection_name=collection_name,
-                points_selector=PointIdsList(points=[point_id]),
+                points_selector=[point_id],
             )
         except Exception:
             pass
