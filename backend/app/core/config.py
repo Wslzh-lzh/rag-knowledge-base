@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     pdf_enable_table_extract: bool = Field(default=False, validation_alias="PDF_ENABLE_TABLE_EXTRACT")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://rag:rag@localhost:5432/rag_kb",
+        default="sqlite+aiosqlite:///./work/rag_kb.db",
         validation_alias="DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     refresh_token_expire_days: int = 30
     bootstrap_admin_email: str = Field(default="admin@example.com", validation_alias="BOOTSTRAP_ADMIN_EMAIL")
-    bootstrap_admin_password: str = Field(default="ChangeMe123!", validation_alias="BOOTSTRAP_ADMIN_PASSWORD")
+    bootstrap_admin_password: str = Field(default="Admin123!", validation_alias="BOOTSTRAP_ADMIN_PASSWORD")
 
     default_embedding_model: str = "BGE-M3"
     default_embedding_provider: str = Field(default="mock", validation_alias="DEFAULT_EMBEDDING_PROVIDER")

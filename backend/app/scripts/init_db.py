@@ -25,7 +25,8 @@ async def init_database() -> None:
         from sqlalchemy import select
 
         result = await db.execute(select(User).where(User.email == settings.bootstrap_admin_email))
-        if not result.scalar_one_or_none():
+        existing = result.scalar_one_or_none()
+        if not existing:
             user = User(
                 email=settings.bootstrap_admin_email,
                 password_hash=hash_password(settings.bootstrap_admin_password),
@@ -37,6 +38,11 @@ async def init_database() -> None:
             await db.commit()
             print(f"Bootstrap admin created: {settings.bootstrap_admin_email}")
         else:
+            existing.password_hash = hash_password(settings.bootstrap_admin_password)
+            existing.display_name = existing.display_name or "Admin"
+            existing.status = existing.status or "active"
+            existing.role = existing.role or "admin"
+            await db.commit()
             print(f"Bootstrap admin already exists: {settings.bootstrap_admin_email}")
 
 

@@ -1,10 +1,88 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { Shell, Sidebar, Card } from "@/components/ui";
-import { api, getToken, clearToken } from "@/lib/api";
-import type { KnowledgeBase, Document, DocumentChunk } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Card, Shell, Sidebar } from "@/components/ui";
+import { api, clearToken, getToken } from "@/lib/api";
+import type { Document, DocumentChunk, KnowledgeBase } from "@/lib/api";
+
+const EDITABLE_FILE_TYPES = new Set(["txt", "md", "markdown", "html", "htm"]);
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case "completed":
+      return "text-green-400";
+    case "processing":
+      return "text-yellow-400";
+    case "pending":
+      return "text-sky-400";
+    case "empty":
+      return "text-slate-300";
+    case "failed":
+      return "text-red-400";
+    default:
+      return "text-muted";
+  }
+}
+
+function getStatusBgColor(status: string) {
+  switch (status) {
+    case "completed":
+      return "border-green-500/30 bg-green-500/10";
+    case "processing":
+      return "border-yellow-500/30 bg-yellow-500/10";
+    case "pending":
+      return "border-sky-500/30 bg-sky-500/10";
+    case "empty":
+      return "border-slate-500/30 bg-slate-500/10";
+    case "failed":
+      return "border-red-500/30 bg-red-500/10";
+    default:
+      return "border-white/10 bg-white/5";
+  }
+}
+
+function getStatusText(status: string) {
+  switch (status) {
+    case "pending":
+      return "排队中";
+    case "processing":
+      return "处理中";
+    case "completed":
+      return "已完成";
+    case "empty":
+      return "无可用内容";
+    case "failed":
+      return "处理失败";
+    default:
+      return status;
+  }
+}
+
+function getStatusHint(status: string) {
+  switch (status) {
+    case "pending":
+      return "文档已进入处理队列，请稍后刷新查看结果。";
+    case "processing":
+      return "系统正在解析文档并生成分段。";
+    case "completed":
+      return "文档解析完成，可以预览内容和分段。";
+    case "empty":
+      return "文档已完成解析，但没有提取到可用于检索的内容。";
+    case "failed":
+      return "文档处理失败，建议重新解析或重新上传。";
+    default:
+      return "当前状态暂未定义。";
+  }
+}
+
+function formatFileSize(bytes: string | number) {
+  const size = typeof bytes === "string" ? parseInt(bytes, 10) : bytes;
+  if (Number.isNaN(size)) return "未知";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function KnowledgeBaseDetailPage() {
   const router = useRouter();
@@ -21,7 +99,7 @@ export default function KnowledgeBaseDetailPage() {
 
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [docChunks, setDocChunks] = useState<DocumentChunk[]>([]);
-  const [docPreview, setDocPreview] = useState<string>("");
+  const [docPreview, setDocPreview] = useState("");
   const [docTotalChunks, setDocTotalChunks] = useState(0);
   const [docLoading, setDocLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"preview" | "chunks">("preview");
@@ -50,7 +128,13 @@ export default function KnowledgeBaseDetailPage() {
       ]);
       setKb(kbResp);
       setDocuments(docsResp);
-    } catch (err) {
+      if (selectedDoc) {
+        const refreshed = docsResp.find((doc) => doc.id === selectedDoc.id);
+        if (refreshed) {
+          setSelectedDoc(refreshed);
+        }
+      }
+    } catch {
       clearToken();
       router.push("/login");
     } finally {
@@ -65,8 +149,7 @@ export default function KnowledgeBaseDetailPage() {
     setUploading(true);
 
     try {
-      const file = files[0];
-      await api.uploadDocument(kbId, file);
+      await api.uploadDocument(kbId, files[0]);
       await loadData();
     } catch (err: any) {
       setError(err.message || "上传失败");
@@ -81,9 +164,7 @@ export default function KnowledgeBaseDetailPage() {
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (!uploading) {
-      setIsDragging(true);
-    }
+    if (!uploading) setIsDragging(true);
   }
 
   function handleDragLeave(e: React.DragEvent) {
@@ -108,6 +189,9 @@ export default function KnowledgeBaseDetailPage() {
     setSelectedDoc(doc);
     setDocLoading(true);
     setActiveTab("preview");
+    setIsEditing(false);
+    setIsRenaming(false);
+
     try {
       const [previewResp, chunksResp] = await Promise.all([
         api.getDocumentPreview(doc.id),
@@ -128,65 +212,20 @@ export default function KnowledgeBaseDetailPage() {
     setDocChunks([]);
     setDocPreview("");
     setDocTotalChunks(0);
-  }
-
-  function getStatusColor(status: string) {
-    switch (status) {
-      case "completed":
-        return "text-green-400";
-      case "processing":
-        return "text-yellow-400";
-      case "failed":
-        return "text-red-400";
-      default:
-        return "text-muted";
-    }
-  }
-
-  function getStatusBgColor(status: string) {
-    switch (status) {
-      case "completed":
-        return "bg-green-500/10 border-green-500/30";
-      case "processing":
-        return "bg-yellow-500/10 border-yellow-500/30";
-      case "failed":
-        return "bg-red-500/10 border-red-500/30";
-      default:
-        return "bg-white/5 border-white/10";
-    }
-  }
-
-  function getStatusText(status: string) {
-    switch (status) {
-      case "completed":
-        return "已完成";
-      case "processing":
-        return "处理中";
-      case "failed":
-        return "失败";
-      default:
-        return status;
-    }
-  }
-
-  function formatFileSize(bytes: string | number) {
-    const size = typeof bytes === "string" ? parseInt(bytes) : bytes;
-    if (isNaN(size)) return "未知";
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    setIsEditing(false);
+    setIsRenaming(false);
   }
 
   async function handleReprocess() {
     if (!selectedDoc || reprocessing) return;
-    if (!confirm(`确定要重新解析「${selectedDoc.file_name}」吗？\n向量数据会重新生成。`)) return;
+    if (!confirm(`确定要重新解析「${selectedDoc.file_name}」吗？\n系统会重新生成向量和全文索引。`)) return;
 
     setReprocessing(true);
     setError(null);
     try {
       await api.reprocessDocument(selectedDoc.id);
       await loadData();
-      await openDocDetail({ ...selectedDoc } as Document);
+      await openDocDetail({ ...selectedDoc });
     } catch (err: any) {
       setError(err.message || "重新解析失败");
     } finally {
@@ -196,7 +235,7 @@ export default function KnowledgeBaseDetailPage() {
 
   async function handleReprocessDoc(doc: Document) {
     if (reprocessing) return;
-    if (!confirm(`确定要重新解析「${doc.file_name}」吗？\n向量数据会重新生成。`)) return;
+    if (!confirm(`确定要重新解析「${doc.file_name}」吗？\n系统会重新生成向量和全文索引。`)) return;
 
     setReprocessing(true);
     setError(null);
@@ -211,13 +250,13 @@ export default function KnowledgeBaseDetailPage() {
   }
 
   async function handleDeleteDoc(doc: Document) {
-    if (!confirm(`确定要删除「${doc.file_name}」吗？\n此操作不可恢复。`)) return;
+    if (!confirm(`确定要删除「${doc.file_name}」吗？\n该操作不可恢复。`)) return;
 
     setError(null);
     try {
       await api.deleteDocument(doc.id);
       if (selectedDoc?.id === doc.id) {
-        setSelectedDoc(null);
+        closeDocDetail();
       }
       await loadData();
     } catch (err: any) {
@@ -262,7 +301,7 @@ export default function KnowledgeBaseDetailPage() {
     try {
       await api.updateDocumentContent(selectedDoc.id, editContent);
       setIsEditing(false);
-      await openDocDetail({ ...selectedDoc } as Document);
+      await openDocDetail({ ...selectedDoc });
       await loadData();
     } catch (err: any) {
       setError(err.message || "保存失败");
@@ -276,10 +315,10 @@ export default function KnowledgeBaseDetailPage() {
       <Shell>
         <Sidebar />
         <main className="flex-1">
-          <Card title="加载中...">
+          <Card title="加载中">
             <div className="flex items-center justify-center py-8">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent"></div>
-              <span className="ml-3 text-muted">正在加载数据...</span>
+              <span className="ml-3 text-muted">正在加载知识库数据...</span>
             </div>
           </Card>
         </main>
@@ -295,7 +334,7 @@ export default function KnowledgeBaseDetailPage() {
           <div>
             <button
               onClick={() => router.push("/kb")}
-              className="text-sm text-muted hover:text-text transition"
+              className="text-sm text-muted transition hover:text-text"
             >
               ← 返回知识库列表
             </button>
@@ -303,19 +342,19 @@ export default function KnowledgeBaseDetailPage() {
             <p className="mt-1 text-sm text-muted">{kb?.description || "暂无描述"}</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted">可见性: {kb?.visibility}</span>
+            <span className="text-sm text-muted">可见性：{kb?.visibility}</span>
           </div>
         </div>
 
-        <Card title="上传文档" subtitle="支持 .txt, .md, .pdf, .html 等格式">
+        <Card title="上传文档" subtitle="支持 .txt、.md、.pdf、.html 等常见文本格式">
           <div className="space-y-4">
             <div
-              className={`rounded-xl border-2 border-dashed p-8 text-center transition cursor-pointer ${
+              className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition ${
                 uploading
                   ? "border-accent/30 bg-accent/5"
                   : isDragging
-                  ? "border-accent bg-accent/10 scale-[1.02]"
-                  : "border-white/15 bg-white/5 hover:border-accent/50 hover:bg-white/10"
+                    ? "scale-[1.02] border-accent bg-accent/10"
+                    : "border-white/15 bg-white/5 hover:border-accent/50 hover:bg-white/10"
               }`}
               onClick={() => !uploading && fileInputRef.current?.click()}
               onDragOver={handleDragOver}
@@ -333,13 +372,13 @@ export default function KnowledgeBaseDetailPage() {
               {uploading ? (
                 <div className="flex items-center justify-center gap-3">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent"></div>
-                  <span className="text-muted">上传处理中，请稍候...</span>
+                  <span className="text-muted">正在上传并处理，请稍候...</span>
                 </div>
               ) : (
                 <>
-                  <div className="text-lg font-medium">点击或拖拽上传文件</div>
+                  <div className="text-lg font-medium">点击或拖拽文件到这里上传</div>
                   <div className="mt-2 text-sm text-muted">
-                    支持 .txt, .md, .markdown, .pdf, .html, .htm 格式
+                    支持 .txt、.md、.markdown、.pdf、.html、.htm
                   </div>
                 </>
               )}
@@ -353,28 +392,28 @@ export default function KnowledgeBaseDetailPage() {
           </div>
         </Card>
 
-        <Card title={`文档列表 (${documents.length})`} subtitle="点击文档可查看详情和 Chunk 列表">
+        <Card title={`文档列表（${documents.length}）`} subtitle="点击文档可查看预览、状态与分段详情">
           {documents.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-6 text-sm text-muted text-center">
-              暂无文档，上传第一个文档开始吧
+            <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-6 text-center text-sm text-muted">
+              暂无文档，先上传第一份资料吧。
             </div>
           ) : (
             <div className="space-y-2">
               {documents.map((doc) => (
                 <div
                   key={doc.id}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10 hover:border-white/20"
+                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4 transition hover:border-white/20 hover:bg-white/10"
                 >
                   <div
-                    className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
                     onClick={() => openDocDetail(doc)}
                   >
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent">
-                      📄
+                      文
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{doc.file_name}</div>
-                      <div className="mt-1 text-xs text-muted flex items-center gap-2">
+                      <div className="truncate font-medium">{doc.file_name}</div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted">
                         <span>{doc.mime_type}</span>
                         <span>·</span>
                         <span className={getStatusColor(doc.parse_status)}>
@@ -384,22 +423,30 @@ export default function KnowledgeBaseDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-1 rounded-md border ${getStatusBgColor(doc.parse_status)} ${getStatusColor(doc.parse_status)}`}>
+                    <span
+                      className={`rounded-md border px-2 py-1 text-xs ${getStatusBgColor(doc.parse_status)} ${getStatusColor(doc.parse_status)}`}
+                    >
                       {getStatusText(doc.parse_status)}
                     </span>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleReprocessDoc(doc); }}
-                      className="text-xs px-2 py-1 rounded-md border border-white/10 text-muted hover:text-text hover:border-white/30 transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReprocessDoc(doc);
+                      }}
+                      className="rounded-md border border-white/10 px-2 py-1 text-xs text-muted transition hover:border-white/30 hover:text-text"
                       title="重新解析"
                     >
-                      🔄
+                      重试
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteDoc(doc); }}
-                      className="text-xs px-2 py-1 rounded-md border border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/40 transition"
-                      title="删除"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteDoc(doc);
+                      }}
+                      className="rounded-md border border-red-500/20 px-2 py-1 text-xs text-red-400 transition hover:border-red-500/40 hover:bg-red-500/10"
+                      title="删除文档"
                     >
-                      🗑️
+                      删除
                     </button>
                   </div>
                 </div>
@@ -409,12 +456,12 @@ export default function KnowledgeBaseDetailPage() {
         </Card>
 
         {selectedDoc && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-4xl max-h-[85vh] rounded-2xl border border-white/10 bg-panel shadow-xl flex flex-col">
-              <div className="flex items-center justify-between p-5 border-b border-white/10">
-                <div className="flex items-center gap-3 min-w-0">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-white/10 bg-panel shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/10 p-5">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent">
-                    📄
+                    文
                   </div>
                   <div className="min-w-0 flex-1">
                     {isRenaming ? (
@@ -424,32 +471,32 @@ export default function KnowledgeBaseDetailPage() {
                           value={renameValue}
                           onChange={(e) => setRenameValue(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleRename()}
-                          className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-white/5 border border-white/20 text-text focus:outline-none focus:border-accent"
+                          className="flex-1 rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-sm text-text focus:border-accent focus:outline-none"
                           autoFocus
                         />
                         <button
                           onClick={handleRename}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/80 transition"
+                          className="rounded-lg bg-accent px-3 py-1.5 text-xs text-white transition hover:bg-accent/80"
                         >
                           保存
                         </button>
                         <button
                           onClick={() => setIsRenaming(false)}
-                          className="px-3 py-1.5 text-xs rounded-lg border border-white/20 text-muted hover:text-text transition"
+                          className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-muted transition hover:text-text"
                         >
                           取消
                         </button>
                       </div>
                     ) : (
                       <h2
-                        className="text-lg font-semibold truncate cursor-pointer hover:text-accent transition"
+                        className="cursor-pointer truncate text-lg font-semibold transition hover:text-accent"
                         onClick={startRename}
                         title="点击重命名"
                       >
                         {selectedDoc.file_name}
                       </h2>
                     )}
-                    <p className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
                       <span>{selectedDoc.mime_type}</span>
                       <span>·</span>
                       <span>{docTotalChunks} 个 Chunk</span>
@@ -478,34 +525,44 @@ export default function KnowledgeBaseDetailPage() {
                   <button
                     onClick={handleReprocess}
                     disabled={reprocessing}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-accent/30 text-accent hover:bg-accent/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 rounded-lg border border-accent/30 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {reprocessing ? (
+                    {reprocessing && (
                       <div className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></div>
-                    ) : (
-                      <span>🔄</span>
                     )}
                     重新解析
                   </button>
                   <button
                     onClick={handleDeleteSelected}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition"
+                    className="flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10"
                   >
-                    🗑️ 删除
+                    删除
                   </button>
                   <button
                     onClick={closeDocDetail}
                     className="rounded-lg p-2 text-muted transition hover:bg-white/10 hover:text-text"
+                    title="关闭"
                   >
-                    ✕
+                    ×
                   </button>
+                </div>
+              </div>
+
+              <div className="border-b border-white/10 px-5 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={`rounded-md border px-2 py-1 text-xs ${getStatusBgColor(selectedDoc.parse_status)} ${getStatusColor(selectedDoc.parse_status)}`}
+                  >
+                    {getStatusText(selectedDoc.parse_status)}
+                  </span>
+                  <span className="text-xs text-muted">{getStatusHint(selectedDoc.parse_status)}</span>
                 </div>
               </div>
 
               <div className="flex border-b border-white/10">
                 <button
                   onClick={() => setActiveTab("preview")}
-                  className={`px-5 py-3 text-sm font-medium transition border-b-2 ${
+                  className={`border-b-2 px-5 py-3 text-sm font-medium transition ${
                     activeTab === "preview"
                       ? "border-accent text-text"
                       : "border-transparent text-muted hover:text-text"
@@ -515,13 +572,13 @@ export default function KnowledgeBaseDetailPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab("chunks")}
-                  className={`px-5 py-3 text-sm font-medium transition border-b-2 ${
+                  className={`border-b-2 px-5 py-3 text-sm font-medium transition ${
                     activeTab === "chunks"
                       ? "border-accent text-text"
                       : "border-transparent text-muted hover:text-text"
                   }`}
                 >
-                  Chunk 列表 ({docChunks.length})
+                  Chunk 列表（{docChunks.length}）
                 </button>
               </div>
 
@@ -529,7 +586,7 @@ export default function KnowledgeBaseDetailPage() {
                 {docLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent"></div>
-                    <span className="ml-3 text-muted">加载中...</span>
+                    <span className="ml-3 text-muted">正在加载文档内容...</span>
                   </div>
                 ) : activeTab === "preview" ? (
                   <div className="prose prose-invert max-w-none">
@@ -538,25 +595,23 @@ export default function KnowledgeBaseDetailPage() {
                         <textarea
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
-                          className="w-full h-96 px-4 py-3 text-sm rounded-xl bg-white/5 border border-white/20 text-text focus:outline-none focus:border-accent font-mono leading-relaxed resize-y"
-                          placeholder="编辑文档内容..."
+                          className="h-96 w-full resize-y rounded-xl border border-white/20 bg-white/5 px-4 py-3 font-mono text-sm leading-relaxed text-text focus:border-accent focus:outline-none"
+                          placeholder="编辑文档正文..."
                         />
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted">
-                            {editContent.length} 字符
-                          </span>
+                          <span className="text-xs text-muted">{editContent.length} 字符</span>
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => setIsEditing(false)}
                               disabled={saving}
-                              className="px-4 py-2 text-sm rounded-lg border border-white/20 text-muted hover:text-text transition disabled:opacity-50"
+                              className="rounded-lg border border-white/20 px-4 py-2 text-sm text-muted transition hover:text-text disabled:opacity-50"
                             >
                               取消
                             </button>
                             <button
                               onClick={handleSaveContent}
                               disabled={saving}
-                              className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent/80 transition disabled:opacity-50 flex items-center gap-2"
+                              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-white transition hover:bg-accent/80 disabled:opacity-50"
                             >
                               {saving && (
                                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
@@ -568,60 +623,60 @@ export default function KnowledgeBaseDetailPage() {
                       </div>
                     ) : docPreview ? (
                       <>
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="text-xs text-muted">
-                            文档预览（前 5 个 Chunk）
-                          </div>
-                          {selectedDoc && ["txt", "md", "markdown", "html", "htm"].includes(selectedDoc.file_type) && (
+                        <div className="mb-3 flex items-center justify-between">
+                          <div className="text-xs text-muted">当前仅展示前 5 个 Chunk 的预览内容。</div>
+                          {selectedDoc && EDITABLE_FILE_TYPES.has(selectedDoc.file_type) && (
                             <button
                               onClick={startEdit}
-                              className="text-xs px-3 py-1 rounded-md border border-accent/30 text-accent hover:bg-accent/10 transition"
+                              className="rounded-md border border-accent/30 px-3 py-1 text-xs text-accent transition hover:bg-accent/10"
                             >
-                              ✏️ 编辑内容
+                              编辑正文
                             </button>
                           )}
                         </div>
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-text/90 bg-white/5 rounded-xl p-4 border border-white/10">
+                        <div className="whitespace-pre-wrap rounded-xl border border-white/10 bg-white/5 p-4 text-sm leading-relaxed text-text/90">
                           {docPreview}
                           {docTotalChunks > 5 && (
-                            <div className="mt-4 pt-3 border-t border-white/10 text-xs text-muted">
-                              仅展示前 5 个 Chunk 的内容，完整内容请查看 Chunk 列表
+                            <div className="mt-4 border-t border-white/10 pt-3 text-xs text-muted">
+                              这里只展示前 5 个 Chunk。若需完整检查，请切换到 Chunk 列表。
                             </div>
                           )}
                         </div>
                       </>
                     ) : (
-                      <div className="text-center py-8 text-muted">
-                        暂无预览内容
+                      <div className="py-8 text-center text-muted">
+                        {selectedDoc.parse_status === "pending" || selectedDoc.parse_status === "processing"
+                          ? "文档仍在处理中，暂时还没有可预览内容。"
+                          : "暂无预览内容。"}
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {docChunks.length === 0 ? (
-                      <div className="text-center py-8 text-muted">
-                        暂无 Chunk 数据
+                      <div className="py-8 text-center text-muted">
+                        {selectedDoc.parse_status === "completed" || selectedDoc.parse_status === "empty"
+                          ? "当前文档还没有 Chunk 数据。"
+                          : "文档处理完成后，这里会展示 Chunk 列表。"}
                       </div>
                     ) : (
                       docChunks.map((chunk, index) => (
                         <div
                           key={chunk.id}
-                          className="rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition"
+                          className="rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"
                         >
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="mb-2 flex items-center justify-between">
                             <span className="text-xs font-medium text-accent">
                               Chunk #{chunk.chunk_no || index + 1}
                             </span>
-                            <span className="text-xs text-muted">
-                              {chunk.content.length} 字符
-                            </span>
+                            <span className="text-xs text-muted">{chunk.content.length} 字符</span>
                           </div>
-                          <div className="text-sm text-text/90 whitespace-pre-wrap leading-relaxed">
+                          <div className="whitespace-pre-wrap text-sm leading-relaxed text-text/90">
                             {chunk.content}
                           </div>
                           {chunk.page_start !== null && chunk.page_end !== null && (
                             <div className="mt-2 text-xs text-muted">
-                              页码: {chunk.page_start} - {chunk.page_end}
+                              页码：{chunk.page_start} - {chunk.page_end}
                             </div>
                           )}
                         </div>

@@ -28,6 +28,13 @@ _storage = None
 _embedding = None
 _vector_store = None
 _fulltext = None
+_STATUS_MESSAGES = {
+    "pending": "Document queued for processing",
+    "processing": "Document is being processed",
+    "completed": "Document parsed successfully",
+    "empty": "Document parsed but no usable content was found",
+    "failed": "Document processing failed",
+}
 
 
 def _get_storage():
@@ -86,6 +93,10 @@ def _chunk_read(chunk) -> DocumentChunkRead:
         token_count=chunk.token_count,
         metadata_=chunk.metadata_,
     )
+
+
+def _status_message(parse_status: str) -> str:
+    return _STATUS_MESSAGES.get(parse_status, f"Document status: {parse_status}")
 
 
 async def _vectorize_chunks(document_id: str, kb_id: str, document_name: str, chunks: list[dict]) -> None:
@@ -149,8 +160,11 @@ async def get_document_status(document_id: str, db: AsyncSession = Depends(get_d
     doc = await service.get_document(db, document_id)
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    message = "Document parsed" if doc.parse_status in {"completed", "empty"} else "Pipeline pending"
-    return DocumentStatusRead(document_id=document_id, parse_status=doc.parse_status, message=message)
+    return DocumentStatusRead(
+        document_id=document_id,
+        parse_status=doc.parse_status,
+        message=_status_message(doc.parse_status),
+    )
 
 
 @router.post("/{document_id}/reprocess")

@@ -25,7 +25,10 @@ async def lifespan(app: FastAPI):
         json_format=settings.log_json_format,
     )
 
+    from app.scripts.init_db import init_database
     from app.services.ingestion.tasks import register_ingestion_tasks
+
+    await init_database()
     register_ingestion_tasks()
 
     tq = get_task_queue()

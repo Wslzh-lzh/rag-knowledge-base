@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
 from app.schemas.search import QARequest, QAResponse, SearchRequest, SearchHit
@@ -16,6 +16,7 @@ retriever = HybridRetriever()
 async def search(
     query: str,
     top_k: int = 10,
+    kb_ids: list[str] = Query(default_factory=list),
     use_vector_search: bool = True,
     use_bm25: bool = True,
     use_reranker: bool = True,
@@ -23,6 +24,7 @@ async def search(
     return await retriever.retrieve(
         RetrievalRequest(
             query=query,
+            knowledge_base_ids=kb_ids,
             top_k=top_k,
             use_vector_search=use_vector_search,
             use_bm25=use_bm25,

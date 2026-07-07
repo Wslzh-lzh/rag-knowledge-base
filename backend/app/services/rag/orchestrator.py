@@ -4,7 +4,9 @@ import re
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from app.core.config import settings
 from app.schemas.search import QAResponse, SearchHit
+from app.services.llm.base import LLMClient
 from app.services.llm.base import LLMMessage
 from app.services.llm.router import get_llm_client
 from app.services.retrieval.hybrid import HybridRetriever, RetrievalRequest
@@ -88,10 +90,19 @@ class FallbackSummarizer:
 
 
 class RAGOrchestrator:
-    def __init__(self, retriever: HybridRetriever | None = None) -> None:
+    def __init__(
+        self,
+        retriever: HybridRetriever | None = None,
+        llm_client: LLMClient | None = None,
+        llm_provider: str | None = None,
+    ) -> None:
         self.retriever = retriever or HybridRetriever()
-        self.llm = get_llm_client()
+        self.llm = llm_client or get_llm_client(llm_provider)
+        self.llm_provider = llm_provider or settings.default_llm_provider
         self.summarizer = FallbackSummarizer()
+
+    def _use_fallback_summary(self) -> bool:
+        return self.llm_provider == "echo"
 
     def _build_context(self, hits: list[SearchHit]) -> str:
         context_parts = []
@@ -132,9 +143,7 @@ class RAGOrchestrator:
             )
         )
 
-        from app.core.config import settings
-
-        if settings.default_llm_provider == "echo":
+        if self._use_fallback_summary():
             answer = self.summarizer.summarize(state.query, hits)
             usage = {"prompt_tokens": 0, "completion_tokens": len(answer), "total_tokens": len(answer)}
             return QAResponse(
@@ -169,9 +178,7 @@ class RAGOrchestrator:
             )
         )
 
-        from app.core.config import settings
-
-        if settings.default_llm_provider == "echo":
+        if self._use_fallback_summary():
             answer = self.summarizer.summarize(state.query, hits)
             usage = {"prompt_tokens": 0, "completion_tokens": len(answer), "total_tokens": len(answer)}
             yield {

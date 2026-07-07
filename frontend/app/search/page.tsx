@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+
 import { Shell, Sidebar, Card } from "@/components/ui";
 import { api, getToken, clearToken } from "@/lib/api";
-import type { SearchHit } from "@/lib/api";
+import type { KnowledgeBase, SearchHit } from "@/lib/api";
 
 export default function SearchPage() {
   const router = useRouter();
@@ -15,14 +15,33 @@ export default function SearchPage() {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
+  const [selectedKb, setSelectedKb] = useState("");
 
   useEffect(() => {
     if (!getToken()) {
       router.push("/login");
-    } else {
-      setAuthChecked(true);
+      return;
     }
+
+    setAuthChecked(true);
+    void loadKnowledgeBases();
   }, [router]);
+
+  async function loadKnowledgeBases() {
+    try {
+      const data = await api.listKnowledgeBases();
+      setKbs(data);
+      if (data.length > 0) {
+        setSelectedKb(data[0].id);
+      }
+    } catch (err: any) {
+      if (err.message?.includes("401") || err.message?.includes("403")) {
+        clearToken();
+        router.push("/login");
+      }
+    }
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +52,7 @@ export default function SearchPage() {
     setError(null);
 
     try {
-      const data = await api.search(query, 10);
+      const data = await api.search(query, 10, selectedKb ? [selectedKb] : undefined);
       setResults(data);
     } catch (err: any) {
       if (err.message?.includes("401") || err.message?.includes("403")) {
@@ -66,12 +85,27 @@ export default function SearchPage() {
     <Shell>
       <Sidebar />
       <main className="flex-1 space-y-6">
-        <Card title="检索" subtitle="向量检索、BM25、混合检索与重排结果">
+        <Card title="搜索" subtitle="支持向量检索、BM25 与混合重排结果">
           <form onSubmit={handleSearch} className="space-y-4">
+            <div className="flex gap-3">
+              <select
+                className="w-64 rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none transition focus:border-accent/50"
+                value={selectedKb}
+                onChange={(e) => setSelectedKb(e.target.value)}
+              >
+                <option value="">全部知识库</option>
+                {kbs.map((kb) => (
+                  <option key={kb.id} value={kb.id}>
+                    {kb.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex gap-3">
               <input
                 className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none transition focus:border-accent/50"
-                placeholder="搜索关键词"
+                placeholder="输入搜索关键词"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -83,6 +117,7 @@ export default function SearchPage() {
                 {loading ? "搜索中..." : "搜索"}
               </button>
             </div>
+
             {error && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
                 {error}
@@ -101,14 +136,14 @@ export default function SearchPage() {
         )}
 
         {searched && !loading && (
-          <Card title={`搜索结果 (${results.length})`} subtitle={`关键词: ${query}`}>
+          <Card title={`搜索结果 (${results.length})`} subtitle={`关键词：${query}`}>
             {error ? (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-400">
-                搜索失败: {error}
+                搜索失败：{error}
               </div>
             ) : results.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-6 text-sm text-muted text-center">
-                没有找到相关结果
+                没有找到相关结果，试试更换关键词或切换知识库筛选。
               </div>
             ) : (
               <div className="space-y-3">
@@ -117,16 +152,16 @@ export default function SearchPage() {
                     key={`${hit.chunk_id}-${index}`}
                     className="rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="mb-2 flex items-center justify-between">
                       <span className="text-sm font-medium truncate">{hit.document_name}</span>
                       <span className="text-xs text-muted shrink-0 ml-2">
-                        相似度: {(hit.similarity_score * 100).toFixed(1)}%
+                        相似度 {(hit.similarity_score * 100).toFixed(1)}%
                       </span>
                     </div>
                     <p className="text-sm text-text line-clamp-3">{hit.content}</p>
                     <div className="mt-2 flex items-center gap-4 text-xs text-muted">
-                      <span>来源类型: {hit.source_type}</span>
-                      {hit.page_start && <span>页码: {hit.page_start}</span>}
+                      <span>来源类型：{hit.source_type}</span>
+                      {hit.page_start && <span>页码：{hit.page_start}</span>}
                     </div>
                   </div>
                 ))}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { Shell, Sidebar, Card } from "@/components/ui";
 import { api, getToken, clearToken } from "@/lib/api";
 import type { KnowledgeBase } from "@/lib/api";
@@ -22,7 +23,7 @@ export default function KnowledgeBasesPage() {
       router.push("/login");
       return;
     }
-    loadKbs();
+    void loadKbs();
   }, [router]);
 
   async function loadKbs() {
@@ -61,7 +62,7 @@ export default function KnowledgeBasesPage() {
       await api.deleteKnowledgeBase(id);
       await loadKbs();
     } catch (err: any) {
-      alert("删除失败: " + err.message);
+      alert(`删除失败: ${err.message}`);
     }
   }
 
@@ -71,7 +72,7 @@ export default function KnowledgeBasesPage() {
         <Sidebar />
         <main className="flex-1">
           <Card title="加载中...">
-            <div className="text-muted text-sm">正在加载数据...</div>
+            <div className="text-sm text-muted">正在加载数据...</div>
           </Card>
         </main>
       </Shell>
@@ -83,7 +84,7 @@ export default function KnowledgeBasesPage() {
       <Sidebar />
       <main className="flex-1 space-y-6">
         <Card title="知识库管理" subtitle="创建、编辑、删除和成员管理">
-          <div className="mb-4 flex justify-between items-center">
+          <div className="mb-4 flex items-center justify-between">
             <p className="text-sm text-muted">共 {kbs.length} 个知识库</p>
             <button
               onClick={() => setShowCreate(!showCreate)}
@@ -135,7 +136,7 @@ export default function KnowledgeBasesPage() {
 
           {kbs.length === 0 ? (
             <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-6 text-sm text-muted">
-              暂无知识库，点击右上角「新建知识库」开始
+              暂无知识库，点击右上角“新建知识库”开始使用。
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -143,7 +144,7 @@ export default function KnowledgeBasesPage() {
                 <div
                   key={kb.id}
                   onClick={() => router.push(`/kb/${kb.id}`)}
-                  className="group rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10 cursor-pointer"
+                  className="group cursor-pointer rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"
                 >
                   <div className="font-medium">{kb.name}</div>
                   <div className="mt-1 text-sm text-muted">{kb.description || "暂无描述"}</div>
@@ -152,9 +153,9 @@ export default function KnowledgeBasesPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDelete(kb.id);
+                        void handleDelete(kb.id);
                       }}
-                      className="text-xs text-red-400 opacity-0 transition group-hover:opacity-100 hover:text-red-300"
+                      className="text-xs text-red-400 opacity-0 transition hover:text-red-300 group-hover:opacity-100"
                     >
                       删除
                     </button>

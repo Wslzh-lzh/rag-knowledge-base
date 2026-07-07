@@ -4,7 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Copy, Check } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 
 interface CodeBlockProps {
   children: string;
@@ -26,22 +26,22 @@ function CodeBlock({ children, className }: CodeBlockProps) {
   };
 
   return (
-    <div className="relative group my-4 rounded-xl overflow-hidden border border-white/10">
-      <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/10">
-        <span className="text-xs text-muted font-mono">{language}</span>
+    <div className="group relative my-4 overflow-hidden rounded-xl border border-white/10">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2">
+        <span className="font-mono text-xs text-muted">{language}</span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md text-muted hover:text-text hover:bg-white/10 transition"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted transition hover:bg-white/10 hover:text-text"
           title="复制代码"
         >
           {copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-green-400" />
+              <Check className="h-3.5 w-3.5 text-green-400" />
               <span className="text-green-400">已复制</span>
             </>
           ) : (
             <>
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="h-3.5 w-3.5" />
               <span>复制</span>
             </>
           )}
@@ -89,7 +89,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
     ">
       <ReactMarkdown
         components={{
-          code({ node, className, children, ...props }) {
+          code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
             const isInline = !match && !String(children).includes("\n");
             return !isInline && match ? (
