@@ -17,12 +17,16 @@ def get_reranker(provider: str | None = None) -> Reranker:
     if _reranker is None:
         _provider = provider or settings.default_reranker_provider
         if _provider == "dashscope":
-            try:
-                _reranker = DashScopeReranker()
-                logger.info("Using DashScope reranker: %s", settings.dashscope_reranker_model)
-            except Exception as e:
-                logger.warning("DashScope reranker init failed, falling back to mock: %s", e)
+            if not settings.can_use_dashscope():
+                logger.warning("DashScope reranker requested but DASHSCOPE_API_KEY is missing, falling back to mock")
                 _reranker = MockReranker()
+            else:
+                try:
+                    _reranker = DashScopeReranker()
+                    logger.info("Using DashScope reranker: %s", settings.dashscope_reranker_model)
+                except Exception as e:
+                    logger.warning("DashScope reranker init failed, falling back to mock: %s", e)
+                    _reranker = MockReranker()
         else:
             _reranker = MockReranker()
             logger.info("Using mock reranker")

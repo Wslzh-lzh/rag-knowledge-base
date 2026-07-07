@@ -40,6 +40,11 @@ async def health_check() -> dict:
     if redis_status["status"] != "healthy":
         overall_status = "degraded"
 
+    providers_status = _check_ai_providers()
+    services["ai_providers"] = providers_status
+    if providers_status["status"] != "healthy":
+        overall_status = "degraded"
+
     return {
         "status": overall_status,
         "timestamp": time.time(),
@@ -99,3 +104,13 @@ async def _check_redis() -> dict:
             return {"status": "healthy"}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}
+
+
+def _check_ai_providers() -> dict:
+    readiness = settings.provider_readiness()
+    all_configured = all(item["configured"] for item in readiness.values())
+    return {
+        "status": "healthy" if all_configured else "degraded",
+        "providers": readiness,
+        "dashscope_api_key_present": settings.can_use_dashscope(),
+    }

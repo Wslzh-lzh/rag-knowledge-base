@@ -50,7 +50,10 @@ class Settings(BaseSettings):
     opensearch_index: str = Field(default="rag_chunks", validation_alias="OPENSEARCH_INDEX")
     opensearch_use_ik_analyzer: bool = Field(default=True, validation_alias="OPENSEARCH_USE_IK_ANALYZER")
 
-    jwt_secret_key: str = Field(default="change-me-in-production", validation_alias="JWT_SECRET_KEY")
+    jwt_secret_key: str = Field(
+        default="local-dev-jwt-secret-key-change-me-please-2026",
+        validation_alias="JWT_SECRET_KEY",
+    )
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
     refresh_token_expire_days: int = 30
@@ -78,6 +81,45 @@ class Settings(BaseSettings):
 
     embedding_api_key: str = Field(default="", validation_alias="EMBEDDING_API_KEY")
     embedding_base_url: str = Field(default="", validation_alias="EMBEDDING_BASE_URL")
+
+    def has_strong_jwt_secret(self) -> bool:
+        return len(self.jwt_secret_key.encode("utf-8")) >= 32
+
+    def can_use_dashscope(self) -> bool:
+        return bool(self.dashscope_api_key.strip())
+
+    def can_use_openai_compatible_llm(self) -> bool:
+        return bool(self.llm_api_key.strip())
+
+    def provider_readiness(self) -> dict[str, dict[str, str | bool]]:
+        llm_provider = self.default_llm_provider
+        embedding_provider = self.default_embedding_provider
+        reranker_provider = self.default_reranker_provider
+
+        return {
+            "llm": {
+                "provider": llm_provider,
+                "configured": (
+                    llm_provider == "echo"
+                    or (llm_provider == "dashscope" and self.can_use_dashscope())
+                    or (llm_provider == "openai" and self.can_use_openai_compatible_llm())
+                ),
+            },
+            "embedding": {
+                "provider": embedding_provider,
+                "configured": (
+                    embedding_provider == "mock"
+                    or (embedding_provider == "dashscope" and self.can_use_dashscope())
+                ),
+            },
+            "reranker": {
+                "provider": reranker_provider,
+                "configured": (
+                    reranker_provider == "mock"
+                    or (reranker_provider == "dashscope" and self.can_use_dashscope())
+                ),
+            },
+        }
 
 
 @lru_cache(maxsize=1)

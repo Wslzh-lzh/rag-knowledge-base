@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rag-kb-backend"
 version = "0.1.0"
 description = "Production-grade RAG knowledge base backend"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
@@ -33,4 +33,3 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-
